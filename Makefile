@@ -13,7 +13,7 @@ RM=/bin/rm -f
 .PHONEY: clean
 
 mmult:
-	${CC} ${CFLAGS} mmult.c -o mmult
+	${CC} ${CFLAGS} mmult.c -o mmult -lpthread
 
 clean:
 	${RM} mmult
