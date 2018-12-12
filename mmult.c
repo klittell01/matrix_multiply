@@ -42,15 +42,22 @@ void* Calculate(void* param){
 }
 
 int main (int argc, char * argv[]){
-    int fd1, fd2, fd3, rows1, cols1, rows2, cols2;
+    FILE* fd1;
+    FILE* fd2;
+    FILE* fd3;
+    int rows1, cols1, rows2, cols2;
     int outR, outC;
     double d1, d2;
+    double* A;
+    double* B;
     int readCount, outfile, infile1, infile2, numThreads;
-    bool writeCV = false;
+    pthread_cond_t writeCV = PTHREAD_COND_INITIALIZER;
     bool useThreads = false;
+    char* p;
     char* buff1;
     char* buff2;
-    char* p;
+    char* aStore;
+    char* bStore;
 
     pthread_t* threads;
     pthread_mutex_t mutexRC;
@@ -80,34 +87,36 @@ int main (int argc, char * argv[]){
 
         // allocate memory for threads //
         threads = (pthread_t*) calloc(numThreads, sizeof(pthread_t));
+
         useThreads = true;
     }
 
         // open matrix files //
-        fd1 = open(argv[infile1], O_RDONLY);
+        fd1 = fopen(argv[infile1], "r");
         if(fd1 < 0){
             perror(argv[1]);
             return -1;
         }
-        fd2 = open(argv[infile2], O_RDONLY);
+        fd2 = fopen(argv[infile2], "r");
         if(fd2 < 0){
             perror(argv[2]);
             return -1;
         }
 
         // read in information about the first matrix //
-        readCount = read(fd1, buff1, 8);
-        if(readCount < 0){
-            printf("Error: Unable to read file.\n");
+        readCount = fread(buff1, sizeof(double), 1, fd1);
+        if(readCount <= 0){
+            printf("Error: Unable to read file %s.\n", argv[infile1]);
         }
         // assign row/col info //
         rows1 = (int)buff1[0];
         cols1 = (int)buff1[4];
 
         // read in information about the second matrix //
-        readCount = read(fd2, buff2, 8);
-        if(readCount < 0){
-            printf("Error: Unable to read file.\n");
+        readCount = fread(buff2, sizeof(double), 1, fd2);
+        if(readCount <= 0){
+            printf("Error: Unable to read file %s.\n", argv[infile2]);
+            return -1;
         }
         // assign row/col info //
         rows2 = (int)buff2[0];
@@ -122,52 +131,110 @@ int main (int argc, char * argv[]){
         }
 
         // open file for writing output //
-        fd3 = open(argv[outfile], O_WRONLY | O_TRUNC | O_CREAT, 00600);
+        fd3 = fopen(argv[outfile], "w");
         if(fd3 < 0){
             perror(argv[outfile]);
             return -1;
         }
 
+        // read complete files into memory //
+        int itemsRead;
+        aStore = malloc(sizeof(double) * rows1 * cols1);
+        itemsRead = fread(aStore, sizeof(double), rows1 * cols1, fd1);
+        if(itemsRead <= 0){
+            printf("Error: Unable to read file %s.\n", argv[infile1]);
+            return -1;
+        }
+        A = (double*) aStore;
 
-        double buffer[16];
-        int a = read(fd1,buffer,sizeof(double));
-        int size = 1;
-        int c=0;
+        bStore = malloc(sizeof(double) * rows2 * cols2);
+        itemsRead = fread(bStore, sizeof(double), rows2 * cols2, fd2);
+        if(itemsRead <= 0){
+            printf("Error: Unable to read file %s.\n", argv[infile2]);
+            return -1;
+        }
+        B = (double*) bStore;
 
-        for(c=0;c<size;c++){
-            char* temp;
-            temp = (char*) calloc(16, sizeof(char));
-            double test;
-            memset(&test, 0, 8);
-            int x = snprintf(temp,16,"%f", buffer[c]);
-            printf("temp1: %.3f\n", temp[1]);
-            test = (double)temp[5];
-            printf("temp2: %.3f\n", test);
-            write(fd3, temp, x);
+        // convert to easily usable arrays //
+        // convert rows of A //
+        double* rA[rows1];
+        for(int i = 0; i < rows1; i++){
+            rA[i] = malloc(sizeof(double) * cols1);
+            for(int j = 0; j < cols1; j++){
+                rA[i][j] = A[(i * rows1) + j];
+            }
         }
 
-        //printf("first double value is: %d\n", d1);
+        // convert columns of A //
+        double* cA[cols1];
+        for(int i = 0; i < cols1; i++){
+            for(int j = 0; j < rows1; j++){
+                cA[j] = malloc(sizeof(double) * rows1);
+                for(int k = 0; k < rows1; k++){
+                    cA[j][k] = A[(k * cols1) + j];
+                }
+            }
+        }
+        // convert rows of B //
+        double* rB[rows2];
+        for(int i = 0; i < rows2; i++){
+            rB[i] = malloc(sizeof(double) * cols2);
+            for(int j = 0; j < cols2; j++){
+                rB[i][j] = B[(i * rows2) + j];
+            }
+        }
+        // convert columns of B //
+        double* cB[cols2];
+        for(int i = 0; i < cols2; i++){
+            for(int j = 0; j < rows2; j++){
+                cB[j] = malloc(sizeof(double) * rows2);
+                for(int k = 0; k < rows2; k++){
+                    cB[j][k] = A[(k * cols2) + j];
+                }
+            }
+        }
+/*
+        NOTE: to access file A data use A[i]. for columns use cA[i][j] where i is
+        the column number and j is the index of the item in the column. for
+        rows use rA[i][j] where i is the row number and j is the index of
+        the item in that row.
+*/
 
+        for(int i = 0; i < 2; i++){
+            printf("cA[0][%d] = %f\n", i, cA[0][i]);
+        }
+        for(int i = 0; i < 2; i++){
+            printf("cA[1][%d] = %f\n", i, cA[1][i]);
+        }
+
+        // calculate the values of the resulting matrix //
+        
+
+
+        /*
+        TODO: i need to get thread return values working. as well as thread
+        concurrency and locking
+        */
 
         printf("rows1: %i\n", rows1);
         printf("cols1: %i\n", cols1);
         printf("rows2: %i\n", rows2);
         printf("cols2: %i\n", cols2);
 
+/*
         pthread_t t1;
         struct RowCol* myArg = (struct RowCol*) calloc(1, sizeof(struct RowCol));
         myArg->row = calloc(cols2, sizeof(double));
         myArg->col = calloc(rows1, sizeof(double));
         double rowVals[10] = {1,1};
         double colVals[10] = {1,1};
-        printf("kevin\n");
         myArg->numRows = 2;
         myArg->numCols = 2;
         memcpy(myArg->row, rowVals, 32);
         memcpy(myArg->col, colVals, 32);
 
         pthread_create(&t1, NULL, Calculate, &myArg);
-
+*/
 
     return 0;
 }
