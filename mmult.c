@@ -157,12 +157,25 @@ int main (int argc, char * argv[]){
 
         // convert to easily usable arrays //
         // convert rows of A //
+        printf("num rows B: %d, num cols B: %d\n", rows2, cols2);
         double* rA[rows1];
+
         for(int i = 0; i < rows1; i++){
             rA[i] = malloc(sizeof(double) * cols1);
+            /*
             for(int j = 0; j < cols1; j++){
+                printf("A[%d] = %f\n", ((i * rows1) + j), A[(i * rows1) + j]);
                 rA[i][j] = A[(i * rows1) + j];
             }
+            */
+        }
+
+
+        int rowIndexA, colIndexA;
+        for(int i = 0; i < (rows1 * cols1); i++){
+            rowIndexA = i / cols1;
+            colIndexA = i % cols1;
+            rA[rowIndexA][colIndexA] = A[i];
         }
 
         // convert columns of A //
@@ -179,11 +192,25 @@ int main (int argc, char * argv[]){
         double* rB[rows2];
         for(int i = 0; i < rows2; i++){
             rB[i] = malloc(sizeof(double) * cols2);
+            /*
             for(int j = 0; j < cols2; j++){
                 rB[i][j] = B[(i * rows2) + j];
             }
+            */
         }
+
+        int rowIndexB, colIndexB;
+        for(int i = 0; i < (rows2 * cols2); i++){
+            rowIndexB = i / cols2;
+            colIndexB = i % cols2;
+            rB[rowIndexB][colIndexB] = B[i];
+            printf("rB[%d][%d] = B[%d] = %f\n", rowIndexB, colIndexB, i, B[i]);
+        }
+
         // convert columns of B //
+        /* when i uncomment this it does something wierd with the memory
+           and puts the wrong numbers in the first couple columns and rows
+           of the rB array.
         double* cB[cols2];
         for(int i = 0; i < cols2; i++){
             for(int j = 0; j < rows2; j++){
@@ -193,33 +220,57 @@ int main (int argc, char * argv[]){
                 }
             }
         }
+        */
 /*
         NOTE: to access file A data use A[i]. for columns use cA[i][j] where i is
         the column number and j is the index of the item in the column. for
         rows use rA[i][j] where i is the row number and j is the index of
         the item in that row.
 */
-
-        for(int i = 0; i < 2; i++){
-            printf("cA[0][%d] = %f\n", i, cA[0][i]);
+/*
+        for(int i = 0; i < cols1; i++){
+            printf("rA[0][%d] = %f\n", i, rA[0][i]);
         }
-        for(int i = 0; i < 2; i++){
-            printf("cA[1][%d] = %f\n", i, cA[1][i]);
+        for(int i = 0; i < cols1; i++){
+            printf("rA[1][%d] = %f\n", i, rA[1][i]);
+        }
+        for(int i = 0; i < cols1; i++){
+            printf("rA[2][%d] = %f\n", i, rA[2][i]);
+        }
+        for(int i = 0; i < cols1; i++){
+            printf("rA[3][%d] = %f\n", i, rA[3][i]);
+        }
+*/
+
+        for(int i = 0; i < rows2; i++){
+            for(int j = 0; j < cols2; j++){
+                printf("rB[%d][%d] = %f\n", i ,j, rB[i][j]);
+            }
         }
 
         // calculate the values of the resulting matrix //
-        
+        double result[rows1][cols2];
+        for(int i = 0; i < rows1; i++){
+            for(int j = 0; j < cols2; j++){
+                result[i][j] = 0;
+                for (int k = 0; k < rows2; k++){
+                    printf("rA[%d][%d] = %.1f, rB[%d][%d] = %.1f\n", i, k, rA[i][k], k, j, rB[k][j]);
+                    result[i][j] += rA[i][k] * rB[k][j];
+                }
+            }
+        }
+
+        for(int i = 0; i < rows1; i++){
+            for(int j = 0; j < cols2; j++){
+                printf("result[%d][%d] = %.1f\n", i, j, result[i][j]);
+            }
+        }
 
 
         /*
         TODO: i need to get thread return values working. as well as thread
         concurrency and locking
         */
-
-        printf("rows1: %i\n", rows1);
-        printf("cols1: %i\n", cols1);
-        printf("rows2: %i\n", rows2);
-        printf("cols2: %i\n", cols2);
 
 /*
         pthread_t t1;
