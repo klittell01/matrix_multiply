@@ -5,12 +5,6 @@
  * COSC 3750, program 11
  * multiply two matrices
  */
-// possible 1270
-// have      704
-// availble  400
-// (.80 + .93) / 2 = .86
-
-// .86
 
 #include "stdbool.h"
 #include "unistd.h"
@@ -40,6 +34,41 @@ void* Calculate(void* param){
 
     return NULL;
 }
+
+    // function to calculate the values of the resulting matrix//
+void Calc(int r, int c, int numRowsA, int numRowsB,
+     int numColsB, double* A[], double* B[], FILE * fdOut){
+
+    double result[numRowsA][numColsB];
+    for(int i = 0; i < numRowsA; i++){
+        for(int j = 0; j < numColsB; j++){
+            result[i][j] = 0;
+            for (int k = 0; k < numRowsB; k++){
+                result[i][j] += A[i][k] * B[k][j];
+            }
+        }
+    }
+
+    /*
+    convert the results to a single dimension array and cast to a char
+    array so we can write them out easily using fwrite
+    */
+    double* outStore;
+    char* out;
+    int rowIndexOut, colIndexOut;
+    outStore = malloc(sizeof(double) * numRowsA * numColsB);
+    for(int i = 0; i < (numRowsA * numColsB); i++){
+            rowIndexOut = i / numColsB;
+            colIndexOut = i % numColsB;
+            outStore[i] = result[rowIndexOut][colIndexOut];
+            out = (char*) outStore;
+            printf("row index: %d, col index: %d, result = %f\n", rowIndexOut,
+                colIndexOut, result[rowIndexOut][colIndexOut]);
+            fwrite(out, 1, sizeof(double), fdOut);
+    }
+}
+
+
 
 int main (int argc, char * argv[]){
     FILE* fd1;
@@ -157,54 +186,27 @@ int main (int argc, char * argv[]){
 
         // convert to easily usable arrays //
         // convert rows of A //
-        printf("num rows B: %d, num cols B: %d\n", rows2, cols2);
         double* rA[rows1];
-
+        int rowIndexA, colIndexA;
         for(int i = 0; i < rows1; i++){
             rA[i] = malloc(sizeof(double) * cols1);
-            /*
-            for(int j = 0; j < cols1; j++){
-                printf("A[%d] = %f\n", ((i * rows1) + j), A[(i * rows1) + j]);
-                rA[i][j] = A[(i * rows1) + j];
-            }
-            */
         }
-
-
-        int rowIndexA, colIndexA;
         for(int i = 0; i < (rows1 * cols1); i++){
             rowIndexA = i / cols1;
             colIndexA = i % cols1;
             rA[rowIndexA][colIndexA] = A[i];
         }
 
-        // convert columns of A //
-        double* cA[cols1];
-        for(int i = 0; i < cols1; i++){
-            for(int j = 0; j < rows1; j++){
-                cA[j] = malloc(sizeof(double) * rows1);
-                for(int k = 0; k < rows1; k++){
-                    cA[j][k] = A[(k * cols1) + j];
-                }
-            }
-        }
         // convert rows of B //
         double* rB[rows2];
+        int rowIndexB, colIndexB;
         for(int i = 0; i < rows2; i++){
             rB[i] = malloc(sizeof(double) * cols2);
-            /*
-            for(int j = 0; j < cols2; j++){
-                rB[i][j] = B[(i * rows2) + j];
-            }
-            */
         }
-
-        int rowIndexB, colIndexB;
         for(int i = 0; i < (rows2 * cols2); i++){
             rowIndexB = i / cols2;
             colIndexB = i % cols2;
             rB[rowIndexB][colIndexB] = B[i];
-            printf("rB[%d][%d] = B[%d] = %f\n", rowIndexB, colIndexB, i, B[i]);
         }
 
         // convert columns of B //
@@ -227,43 +229,26 @@ int main (int argc, char * argv[]){
         rows use rA[i][j] where i is the row number and j is the index of
         the item in that row.
 */
+
 /*
-        for(int i = 0; i < cols1; i++){
-            printf("rA[0][%d] = %f\n", i, rA[0][i]);
-        }
-        for(int i = 0; i < cols1; i++){
-            printf("rA[1][%d] = %f\n", i, rA[1][i]);
-        }
-        for(int i = 0; i < cols1; i++){
-            printf("rA[2][%d] = %f\n", i, rA[2][i]);
-        }
-        for(int i = 0; i < cols1; i++){
-            printf("rA[3][%d] = %f\n", i, rA[3][i]);
-        }
-*/
-
-        for(int i = 0; i < rows2; i++){
-            for(int j = 0; j < cols2; j++){
-                printf("rB[%d][%d] = %f\n", i ,j, rB[i][j]);
-            }
-        }
-
-        // calculate the values of the resulting matrix //
+        as this is it works for single thread multipilcation.
         double result[rows1][cols2];
         for(int i = 0; i < rows1; i++){
             for(int j = 0; j < cols2; j++){
                 result[i][j] = 0;
                 for (int k = 0; k < rows2; k++){
-                    printf("rA[%d][%d] = %.1f, rB[%d][%d] = %.1f\n", i, k, rA[i][k], k, j, rB[k][j]);
                     result[i][j] += rA[i][k] * rB[k][j];
                 }
             }
         }
+*/
 
-        for(int i = 0; i < rows1; i++){
-            for(int j = 0; j < cols2; j++){
-                printf("result[%d][%d] = %.1f\n", i, j, result[i][j]);
-            }
+        // start sending our info to all threads and stuff //
+        printf("rows1 = %d, cols1 = %d\n", rows1, cols1);
+        if(useThreads == false){
+            Calc(0, 0, rows1, rows2, cols2, rA, rB, fd3);
+        } else {
+
         }
 
 
