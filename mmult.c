@@ -28,6 +28,47 @@ struct ResultMatrix{
     double result[2048][2048];
 };
 
+
+struct ResultMatrix* res;
+double ijResult = 0;
+pthread_cond_t writeCV;
+
+/*
+Calculate: function to calculate the values of the resulting matrix
+using one extra thread
+*/
+void* MultiCalculate(void* param){
+    struct RowCol* myArg;
+    myArg = calloc(1, sizeof(struct RowCol));
+    myArg = (struct RowCol*) param;
+
+    int numRowsA, numRowsB, numColsB, r, c;
+
+    numRowsA = myArg->numRowsA;
+    numRowsB = myArg->numRowsB;
+    numColsB = myArg->numColsB;
+    r = myArg->r;
+    c = myArg->c;
+    printf("calculating row: %d, col: %d\n", r, c);
+    //double result[numRowsA][numColsB];
+    for(int i = 0; i < numRowsA; i++){
+        for(int j = 0; j < numColsB; j++){
+            //printf("j = %d\n", j);
+            res->result[i][j] = 0;
+            for (int k = 0; k < numRowsB; k++){
+                //printf("k = %d\n", k);
+                //printf("A[%d][%d] = %f\n", i, k, myArg->A[i][k]);
+                //printf("B[%d][%d] = %f\n", k, j, myArg->B[k][j]);
+                res->result[i][j] += myArg->A[i][k] * myArg->B[k][j];
+                ijResult += myArg->A[i][k] * myArg->B[k][j];
+            }
+        }
+    }
+    pthread_cond_broadcast(&writeCV);
+    return NULL;
+}
+
+
 /*
 Calculate: function to calculate the values of the resulting matrix
 using one extra thread
@@ -43,16 +84,16 @@ void* Calculate(void* param){
     numRowsB = myArg->numRowsB;
     numColsB = myArg->numColsB;
     printf("function numRowsA: %d, numColsB: %d\n", numRowsA, numColsB);
-    double result[numRowsA][numColsB];
+    //double result[numRowsA][numColsB];
     for(int i = 0; i < numRowsA; i++){
         for(int j = 0; j < numColsB; j++){
             //printf("j = %d\n", j);
-            result[i][j] = 0;
+            res->result[i][j] = 0;
             for (int k = 0; k < numRowsB; k++){
                 //printf("k = %d\n", k);
                 //printf("A[%d][%d] = %f\n", i, k, myArg->A[i][k]);
                 //printf("B[%d][%d] = %f\n", k, j, myArg->B[k][j]);
-                result[i][j] += myArg->A[i][k] * myArg->B[k][j];
+                res->result[i][j] += myArg->A[i][k] * myArg->B[k][j];
 
             }
         }
@@ -97,18 +138,16 @@ void Calc(int r, int c, int numRowsA, int numRowsB,
     }
 }
 
-struct ResultMatrix res;
-
 int main (int argc, char * argv[]){
     FILE* fd1;
     FILE* fd2;
     FILE* fd3;
-    int rows1, cols1, rows2, cols2;
-    int outR, outC;
+    int numRowsA, numColsA, numRowsB, numColsB;
+    int myRow = 0;
+    int myCol = 0;
     double* A;
     double* B;
     int readCount, outfile, infile1, infile2, numThreads;
-    pthread_cond_t writeCV = PTHREAD_COND_INITIALIZER;
     bool useThreads = false;
     char* p;
     char* buff1;
@@ -119,9 +158,17 @@ int main (int argc, char * argv[]){
     pthread_mutex_t mutexRC;
     pthread_mutex_t mutexOut;
 
+    // init mutex //
+    pthread_mutex_init(&mutexRC, NULL);
+    pthread_mutex_init(&mutexOut, NULL);
+
+    // init CV //
+    pthread_cond_init(&writeCV, NULL);
+
     // zero out buffer //
     buff1 = (char*) calloc(8, sizeof(char));
     buff2 = (char*) calloc(8, sizeof(char));
+    res = calloc(1, sizeof(struct ResultMatrix));
 
     // setup arguments depending on thread usage or no
     if(argc == 4){ // no threads will be used
@@ -161,8 +208,8 @@ int main (int argc, char * argv[]){
         printf("Error: Unable to read file %s.\n", argv[infile1]);
     }
     // assign row/col info //
-    rows1 = (int)buff1[0];
-    cols1 = (int)buff1[4];
+    numRowsA = (int)buff1[0];
+    numColsA = (int)buff1[4];
 
     // read in information about the second matrix //
     readCount = fread(buff2, sizeof(double), 1, fd2);
@@ -171,13 +218,13 @@ int main (int argc, char * argv[]){
         return -1;
     }
     // assign row/col info //
-    rows2 = (int)buff2[0];
-    cols2 = (int)buff2[4];
-    if(rows1 != cols2){
+    numRowsB = (int)buff2[0];
+    numColsB = (int)buff2[4];
+    if(numRowsA != numColsB){
         printf("Error: Cannot multiply matrices of these sizes.\n");
         return -1;
     }
-    if(rows1 < 0 || rows2 < 0 || cols1 < 0 || cols2 < 0){
+    if(numRowsA < 0 || numRowsB < 0 || numColsA < 0 || numColsB < 0){
         printf("Error: Size of matrices must be positive.\n");
         return -1;
     }
@@ -191,16 +238,16 @@ int main (int argc, char * argv[]){
 
     // read complete files into memory //
     int itemsRead;
-    aStore = malloc(sizeof(double) * rows1 * cols1);
-    itemsRead = fread(aStore, sizeof(double), rows1 * cols1, fd1);
+    aStore = malloc(sizeof(double) * numRowsA * numColsA);
+    itemsRead = fread(aStore, sizeof(double), numRowsA * numColsA, fd1);
     if(itemsRead <= 0){
         printf("Error: Unable to read file %s.\n", argv[infile1]);
         return -1;
     }
     A = (double*) aStore;
 
-    bStore = malloc(sizeof(double) * rows2 * cols2);
-    itemsRead = fread(bStore, sizeof(double), rows2 * cols2, fd2);
+    bStore = malloc(sizeof(double) * numRowsB * numColsB);
+    itemsRead = fread(bStore, sizeof(double), numRowsB * numColsB, fd2);
     if(itemsRead <= 0){
         printf("Error: Unable to read file %s.\n", argv[infile2]);
         return -1;
@@ -209,26 +256,26 @@ int main (int argc, char * argv[]){
 
     // convert to easily usable arrays //
     // convert rows of A //
-    double* rA[rows1];
+    double* rA[numRowsA];
     int rowIndexA, colIndexA;
-    for(int i = 0; i < rows1; i++){
-        rA[i] = malloc(sizeof(double) * cols1);
+    for(int i = 0; i < numRowsA; i++){
+        rA[i] = malloc(sizeof(double) * numColsA);
     }
-    for(int i = 0; i < (rows1 * cols1); i++){
-        rowIndexA = i / cols1;
-        colIndexA = i % cols1;
+    for(int i = 0; i < (numRowsA * numColsA); i++){
+        rowIndexA = i / numColsA;
+        colIndexA = i % numColsA;
         rA[rowIndexA][colIndexA] = A[i];
     }
 
     // convert rows of B //
-    double* rB[rows2];
+    double* rB[numRowsB];
     int rowIndexB, colIndexB;
-    for(int i = 0; i < rows2; i++){
-        rB[i] = malloc(sizeof(double) * cols2);
+    for(int i = 0; i < numRowsB; i++){
+        rB[i] = malloc(sizeof(double) * numColsB);
     }
-    for(int i = 0; i < (rows2 * cols2); i++){
-        rowIndexB = i / cols2;
-        colIndexB = i % cols2;
+    for(int i = 0; i < (numRowsB * numColsB); i++){
+        rowIndexB = i / numColsB;
+        colIndexB = i % numColsB;
         rB[rowIndexB][colIndexB] = B[i];
     }
 
@@ -236,12 +283,12 @@ int main (int argc, char * argv[]){
     /* when i uncomment this it does something wierd with the memory
        and puts the wrong numbers in the first couple columns and rows
        of the rB array.
-    double* cB[cols2];
-    for(int i = 0; i < cols2; i++){
-        for(int j = 0; j < rows2; j++){
-            cB[j] = malloc(sizeof(double) * rows2);
-            for(int k = 0; k < rows2; k++){
-                cB[j][k] = A[(k * cols2) + j];
+    double* cB[numColsB];
+    for(int i = 0; i < numColsB; i++){
+        for(int j = 0; j < numRowsB; j++){
+            cB[j] = malloc(sizeof(double) * numRowsB);
+            for(int k = 0; k < numRowsB; k++){
+                cB[j][k] = A[(k * numColsB) + j];
             }
         }
     }
@@ -255,11 +302,11 @@ int main (int argc, char * argv[]){
 
 /*
     as this is it works for single thread multipilcation.
-    double result[rows1][cols2];
-    for(int i = 0; i < rows1; i++){
-        for(int j = 0; j < cols2; j++){
+    double result[numRowsA][numColsB];
+    for(int i = 0; i < numRowsA; i++){
+        for(int j = 0; j < numColsB; j++){
             result[i][j] = 0;
-            for (int k = 0; k < rows2; k++){
+            for (int k = 0; k < numRowsB; k++){
                 result[i][j] += rA[i][k] * rB[k][j];
             }
         }
@@ -267,19 +314,88 @@ int main (int argc, char * argv[]){
 */
 
     // start sending our info to all threads and stuff //
-    printf("rows1 = %d, cols1 = %d\n", rows1, cols1);
+    printf("numRowsA = %d, numColsA = %d\n", numRowsA, numColsA);
     if(useThreads == false){
-        Calc(0, 0, rows1, rows2, cols2, rA, rB, fd3);
+        Calc(0, 0, numRowsA, numRowsB, numColsB, rA, rB, fd3);
     } else {
-        struct RowCol* myArg = (struct RowCol *) calloc(1, sizeof(struct RowCol));
-        myArg->numRowsA = rows1;
-        myArg->numRowsB = rows2;
-        myArg->numColsB = cols2;
-        memcpy(myArg->A, rA, 2048);
-        memcpy(myArg->B, rB, 2048);
-        pthread_t threadId;
-        pthread_create(&threadId, NULL, Calculate, (void*)myArg);
-        pthread_join(threadId, NULL);
+        if(numThreads == 1){
+            struct RowCol* myArg = (struct RowCol *) calloc(1, sizeof(struct RowCol));
+            myArg->numRowsA = numRowsA;
+            myArg->numRowsB = numRowsB;
+            myArg->numColsB = numColsB;
+            memcpy(myArg->A, rA, 2048);
+            memcpy(myArg->B, rB, 2048);
+            pthread_t threadId;
+            pthread_create(&threadId, NULL, Calculate, (void*)myArg);
+            pthread_join(threadId, NULL);
+
+            /*
+            convert the results to a single dimension array and cast to a char
+            array so we can write them out easily using fwrite
+            */
+            double* outStore;
+            char* out;
+            int rowIndexOut, colIndexOut;
+            outStore = malloc(sizeof(double) * numRowsA * numColsB);
+            for(int i = 0; i < (numRowsA * numColsB); i++){
+                rowIndexOut = i / numColsB;
+                colIndexOut = i % numColsB;
+                outStore[i] = res->result[rowIndexOut][colIndexOut];
+                out = (char*) outStore;
+                printf("row index: %d, col index: %d, result = %f\n", rowIndexOut,
+                    colIndexOut, res->result[rowIndexOut][colIndexOut]);
+                fwrite(out, 1, sizeof(double), fd3);
+            }
+        } else {
+            int total = numRowsA * numColsB;
+            int count = 0;
+            pthread_t threads[numThreads];
+            /*
+            for(int i = 0; i < numThreads; i++){
+                rc = pthread_create(&threads[i], NULL, NULL, NULL);
+                printf("creating thread: %d\n", i);
+                if (rc){
+                   printf("ERROR; return code from pthread_create() is %d\n", rc);
+                   exit(-1);
+                }
+            }
+            */
+            while(count < total){
+                struct RowCol* myArg = (struct RowCol *) calloc(1, sizeof(struct RowCol));
+                myArg->numRowsA = numRowsA;
+                myArg->numRowsB = numRowsB;
+                myArg->numColsB = numColsB;
+                memcpy(myArg->A, rA, 2048);
+                memcpy(myArg->B, rB, 2048);
+
+                pthread_mutex_lock(&mutexRC);
+                    myArg->r = myRow;
+                    myArg->c = myCol;
+
+                    if(myRow < (numRowsA - 1)){
+                        if(myCol < (numColsB - 1)){
+                            myCol++;
+                        } else {
+                            myRow++;
+                            myCol = 0;
+                        }
+                    } else {
+                        if(myCol < (numColsB - 1)){
+                            myCol++;
+                        }
+                        // signal here that the multipilcation is done //
+
+                    }
+
+                    pthread_create(&threads[count], NULL, MultiCalculate, (void*)myArg);
+
+                    pthread_cond_wait(&writeCV, &mutexRC);
+                    //printf("ij result: %f\n", ijResult);
+                pthread_mutex_unlock(&mutexRC);
+
+                count++;
+            }
+        }
     }
 
 
@@ -291,9 +407,9 @@ int main (int argc, char * argv[]){
 /*
     pthread_t t1;
     struct RowCol* myArg = (struct RowCol*) calloc(1, sizeof(struct RowCol));
-    myArg->numRowsA = rows1;
-    myArg->numRowsB = rows2;
-    myArg->numColsB = cols2;
+    myArg->numRowsA = numRowsA;
+    myArg->numRowsB = numRowsB;
+    myArg->numColsB = numColsB;
 
     //memcpy(myArg->A, rA, 2048);
     //memcpy(myArg->col, colVals, 2048);
