@@ -20,8 +20,8 @@
 
 struct RowCol {
     int numRowsA, numRowsB, numColsB, r, c;
-    double* A[2048];
-    double* B[2048];
+    double** A;
+    double** B;
 };
 
 struct ResultMatrix{
@@ -35,7 +35,7 @@ pthread_cond_t writeCV;
 
 /*
 Calculate: function to calculate the values of the resulting matrix
-using one extra thread
+using as many threads as specified
 */
 void* MultiCalculate(void* param){
     struct RowCol* myArg;
@@ -51,19 +51,13 @@ void* MultiCalculate(void* param){
     c = myArg->c;
     printf("calculating row: %d, col: %d\n", r, c);
     //double result[numRowsA][numColsB];
-    for(int i = 0; i < numRowsA; i++){
-        for(int j = 0; j < numColsB; j++){
-            //printf("j = %d\n", j);
-            res->result[i][j] = 0;
-            for (int k = 0; k < numRowsB; k++){
-                //printf("k = %d\n", k);
-                //printf("A[%d][%d] = %f\n", i, k, myArg->A[i][k]);
-                //printf("B[%d][%d] = %f\n", k, j, myArg->B[k][j]);
-                res->result[i][j] += myArg->A[i][k] * myArg->B[k][j];
-                ijResult += myArg->A[i][k] * myArg->B[k][j];
-            }
-        }
+    double myNum = 0.0;
+    for(int i = 0; i < numColsB; i++){
+    //    printf("A[%d][%d]: %f, B[%d][%d]: %f\n", r, i, myArg->A[r][i], i, c, myArg->B[i][c]);
+        myNum += myArg->A[r][i] * myArg->B[i][c];
     }
+    printf("myNum: %f\n\n", myNum);
+    ijResult = myNum;
     pthread_cond_broadcast(&writeCV);
     return NULL;
 }
@@ -279,42 +273,26 @@ int main (int argc, char * argv[]){
         rB[rowIndexB][colIndexB] = B[i];
     }
 
-    // convert columns of B //
-    /* when i uncomment this it does something wierd with the memory
-       and puts the wrong numbers in the first couple columns and rows
-       of the rB array.
-    double* cB[numColsB];
-    for(int i = 0; i < numColsB; i++){
-        for(int j = 0; j < numRowsB; j++){
-            cB[j] = malloc(sizeof(double) * numRowsB);
-            for(int k = 0; k < numRowsB; k++){
-                cB[j][k] = A[(k * numColsB) + j];
-            }
-        }
-    }
-    */
 /*
-    NOTE: to access file A data use A[i]. for columns use cA[i][j] where i is
-    the column number and j is the index of the item in the column. for
-    rows use rA[i][j] where i is the row number and j is the index of
-    the item in that row.
-*/
-
-/*
-    as this is it works for single thread multipilcation.
-    double result[numRowsA][numColsB];
-    for(int i = 0; i < numRowsA; i++){
-        for(int j = 0; j < numColsB; j++){
-            result[i][j] = 0;
-            for (int k = 0; k < numRowsB; k++){
-                result[i][j] += rA[i][k] * rB[k][j];
-            }
-        }
-    }
+    NOTE: to access file A data use A[i]. for rows use rA[i][j] where i
+    is the row number and j is the index of the item in that row.
 */
 
     // start sending our info to all threads and stuff //
     printf("numRowsA = %d, numColsA = %d\n", numRowsA, numColsA);
+    // begin by timing the process //
+    double startT;
+    double endT;
+    startT = time(NULL);
+
+    int* outSize;
+    char* sizeBuff;
+    outSize = malloc(2 * sizeof(int));
+    outSize[0] = numRowsA;
+    outSize[1] = numColsB;
+    sizeBuff = (char*) outSize;
+    fwrite(sizeBuff, 1, sizeof(double), fd3);
+
     if(useThreads == false){
         Calc(0, 0, numRowsA, numRowsB, numColsB, rA, rB, fd3);
     } else {
@@ -360,18 +338,23 @@ int main (int argc, char * argv[]){
                 }
             }
             */
-            while(count < total){
-                struct RowCol* myArg = (struct RowCol *) calloc(1, sizeof(struct RowCol));
-                myArg->numRowsA = numRowsA;
-                myArg->numRowsB = numRowsB;
-                myArg->numColsB = numColsB;
-                memcpy(myArg->A, rA, 2048);
-                memcpy(myArg->B, rB, 2048);
+            struct RowCol* myArg = (struct RowCol *) calloc(1, sizeof(struct RowCol));
+            myArg->A = calloc(numRowsA * numColsB, sizeof(double));
+            myArg->B = calloc(numRowsA * numColsB, sizeof(double));
+            myArg->numRowsA = numRowsA;
+            myArg->numRowsB = numRowsB;
+            myArg->numColsB = numColsB;
+            memcpy(myArg->A, rA, (sizeof(double) * numRowsA * numColsA));
+            memcpy(myArg->B, rB, (sizeof(double) * numRowsA * numColsA));
 
+            while(count < total){
                 pthread_mutex_lock(&mutexRC);
                     myArg->r = myRow;
                     myArg->c = myCol;
 
+                    //printf("myArg->A[%d][0]: %f, myArg->B[0][%d]: %f\n", myRow, myArg->A[myRow][0], myCol, myArg->B[0][myCol]);
+                    //printf("rA[%d][0]: %f, rB[0][%d]: %f\n", myRow, rA[myRow][0],
+                    //    myCol, rB[0][myCol]);
                     if(myRow < (numRowsA - 1)){
                         if(myCol < (numColsB - 1)){
                             myCol++;
@@ -382,22 +365,38 @@ int main (int argc, char * argv[]){
                     } else {
                         if(myCol < (numColsB - 1)){
                             myCol++;
+                        } else {
+                            printf("finished with the multiplication\n");
                         }
-                        // signal here that the multipilcation is done //
-
                     }
 
                     pthread_create(&threads[count], NULL, MultiCalculate, (void*)myArg);
 
                     pthread_cond_wait(&writeCV, &mutexRC);
-                    //printf("ij result: %f\n", ijResult);
+
+                    double* outDouble;
+                    char* out;
+                    outDouble = malloc(sizeof(double));
+                    outDouble[0] = ijResult;
+                    out = (char*) outDouble;
+                    fwrite(out, 1, sizeof(double), fd3);
+
+                    printf("ij result: %f\n", ijResult);
                 pthread_mutex_unlock(&mutexRC);
 
                 count++;
             }
         }
+    //    sleep(2);
     }
 
+    endT = time(NULL);
+    double totalTime;
+    totalTime = (double)(endT - startT);
+    printf("\nIt took %.1f seconds to multiply \n", totalTime);
+    printf("matrix A: rows %d, cols %d\n", numRowsA, numColsA);
+    printf("matrix B: rows %d, cols %d\n", numRowsB, numColsB);
+    printf("Using %d worker threads.\n", numThreads);
 
     /*
     TODO: i need to get thread return values working. as well as thread
