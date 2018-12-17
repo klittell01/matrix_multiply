@@ -25,12 +25,6 @@ struct RowCol {
     double** B;
 };
 
-struct ResultMatrix{
-    double result[2048][2048];
-};
-
-
-struct ResultMatrix* res;
 double ijResult = 0;
 pthread_cond_t writeCV;
 
@@ -50,50 +44,12 @@ void* MultiCalculate(void* param){
     numColsB = myArg->numColsB;
     r = myArg->r;
     c = myArg->c;
-    printf("calculating row: %d, col: %d\n", r, c);
-    //double result[numRowsA][numColsB];
     double myNum = 0.0;
     for(int i = 0; i < numColsB; i++){
-    //    printf("A[%d][%d]: %f, B[%d][%d]: %f\n", r, i, myArg->A[r][i], i, c, myArg->B[i][c]);
         myNum += myArg->A[r][i] * myArg->B[i][c];
     }
-    printf("myNum: %f\n\n", myNum);
     ijResult = myNum;
     pthread_cond_broadcast(&writeCV);
-    return NULL;
-}
-
-
-/*
-Calculate: function to calculate the values of the resulting matrix
-using one extra thread
-*/
-void* Calculate(void* param){
-    struct RowCol* myArg;
-    myArg = calloc(1, sizeof(struct RowCol));
-    myArg = (struct RowCol*) param;
-
-    int numRowsA, numRowsB, numColsB;
-
-    numRowsA = myArg->numRowsA;
-    numRowsB = myArg->numRowsB;
-    numColsB = myArg->numColsB;
-    printf("function numRowsA: %d, numColsB: %d\n", numRowsA, numColsB);
-    //double result[numRowsA][numColsB];
-    for(int i = 0; i < numRowsA; i++){
-        for(int j = 0; j < numColsB; j++){
-            //printf("j = %d\n", j);
-            res->result[i][j] = 0;
-            for (int k = 0; k < numRowsB; k++){
-                //printf("k = %d\n", k);
-                //printf("A[%d][%d] = %f\n", i, k, myArg->A[i][k]);
-                //printf("B[%d][%d] = %f\n", k, j, myArg->B[k][j]);
-                res->result[i][j] += myArg->A[i][k] * myArg->B[k][j];
-
-            }
-        }
-    }
-
     return NULL;
 }
 
@@ -127,8 +83,6 @@ void Calc(int r, int c, int numRowsA, int numRowsB,
             colIndexOut = i % numColsB;
             outStore[i] = result[rowIndexOut][colIndexOut];
             out = (char*) outStore;
-            printf("row index: %d, col index: %d, result = %f\n", rowIndexOut,
-                colIndexOut, result[rowIndexOut][colIndexOut]);
             fwrite(out, 1, sizeof(double), fdOut);
     }
 }
@@ -163,7 +117,6 @@ int main (int argc, char * argv[]){
     // zero out buffer //
     buff1 = (char*) calloc(8, sizeof(char));
     buff2 = (char*) calloc(8, sizeof(char));
-    res = calloc(1, sizeof(struct ResultMatrix));
 
     // setup arguments depending on thread usage or no
     if(argc == 4){ // no threads will be used
@@ -313,9 +266,6 @@ int main (int argc, char * argv[]){
                 myArg->r = myRow;
                 myArg->c = myCol;
 
-                //printf("myArg->A[%d][0]: %f, myArg->B[0][%d]: %f\n", myRow, myArg->A[myRow][0], myCol, myArg->B[0][myCol]);
-                //printf("rA[%d][0]: %f, rB[0][%d]: %f\n", myRow, rA[myRow][0],
-                //    myCol, rB[0][myCol]);
                 if(myRow < (numRowsA - 1)){
                     if(myCol < (numColsB - 1)){
                         myCol++;
@@ -326,8 +276,6 @@ int main (int argc, char * argv[]){
                 } else {
                     if(myCol < (numColsB - 1)){
                         myCol++;
-                    } else {
-                        printf("finished with the multiplication\n");
                     }
                 }
 
@@ -342,7 +290,6 @@ int main (int argc, char * argv[]){
                 out = (char*) outDouble;
                 fwrite(out, 1, sizeof(double), fd3);
 
-                printf("ij result: %f\n", ijResult);
             pthread_mutex_unlock(&mutexRC);
 
             count++;
