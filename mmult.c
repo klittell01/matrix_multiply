@@ -14,6 +14,7 @@
 #include "stdlib.h"
 #include "fcntl.h"
 #include "pthread.h"
+#include <time.h>
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -279,10 +280,9 @@ int main (int argc, char * argv[]){
 */
 
     // start sending our info to all threads and stuff //
-    printf("numRowsA = %d, numColsA = %d\n", numRowsA, numColsA);
     // begin by timing the process //
-    double startT;
-    double endT;
+    int startT;
+    int endT;
     startT = time(NULL);
 
     int* outSize;
@@ -296,126 +296,69 @@ int main (int argc, char * argv[]){
     if(useThreads == false){
         Calc(0, 0, numRowsA, numRowsB, numColsB, rA, rB, fd3);
     } else {
-        if(numThreads == 1){
-            struct RowCol* myArg = (struct RowCol *) calloc(1, sizeof(struct RowCol));
-            myArg->numRowsA = numRowsA;
-            myArg->numRowsB = numRowsB;
-            myArg->numColsB = numColsB;
-            memcpy(myArg->A, rA, 2048);
-            memcpy(myArg->B, rB, 2048);
-            pthread_t threadId;
-            pthread_create(&threadId, NULL, Calculate, (void*)myArg);
-            pthread_join(threadId, NULL);
+        int total = numRowsA * numColsB;
+        int count = 0;
+        pthread_t threads[numThreads];
+        struct RowCol* myArg = (struct RowCol *) calloc(1, sizeof(struct RowCol));
+        myArg->A = calloc(numRowsA * numColsB, sizeof(double));
+        myArg->B = calloc(numRowsA * numColsB, sizeof(double));
+        myArg->numRowsA = numRowsA;
+        myArg->numRowsB = numRowsB;
+        myArg->numColsB = numColsB;
+        memcpy(myArg->A, rA, (sizeof(double) * numRowsA * numColsA));
+        memcpy(myArg->B, rB, (sizeof(double) * numRowsA * numColsA));
 
-            /*
-            convert the results to a single dimension array and cast to a char
-            array so we can write them out easily using fwrite
-            */
-            double* outStore;
-            char* out;
-            int rowIndexOut, colIndexOut;
-            outStore = malloc(sizeof(double) * numRowsA * numColsB);
-            for(int i = 0; i < (numRowsA * numColsB); i++){
-                rowIndexOut = i / numColsB;
-                colIndexOut = i % numColsB;
-                outStore[i] = res->result[rowIndexOut][colIndexOut];
-                out = (char*) outStore;
-                printf("row index: %d, col index: %d, result = %f\n", rowIndexOut,
-                    colIndexOut, res->result[rowIndexOut][colIndexOut]);
-                fwrite(out, 1, sizeof(double), fd3);
-            }
-        } else {
-            int total = numRowsA * numColsB;
-            int count = 0;
-            pthread_t threads[numThreads];
-            /*
-            for(int i = 0; i < numThreads; i++){
-                rc = pthread_create(&threads[i], NULL, NULL, NULL);
-                printf("creating thread: %d\n", i);
-                if (rc){
-                   printf("ERROR; return code from pthread_create() is %d\n", rc);
-                   exit(-1);
-                }
-            }
-            */
-            struct RowCol* myArg = (struct RowCol *) calloc(1, sizeof(struct RowCol));
-            myArg->A = calloc(numRowsA * numColsB, sizeof(double));
-            myArg->B = calloc(numRowsA * numColsB, sizeof(double));
-            myArg->numRowsA = numRowsA;
-            myArg->numRowsB = numRowsB;
-            myArg->numColsB = numColsB;
-            memcpy(myArg->A, rA, (sizeof(double) * numRowsA * numColsA));
-            memcpy(myArg->B, rB, (sizeof(double) * numRowsA * numColsA));
+        while(count < total){
+            pthread_mutex_lock(&mutexRC);
+                myArg->r = myRow;
+                myArg->c = myCol;
 
-            while(count < total){
-                pthread_mutex_lock(&mutexRC);
-                    myArg->r = myRow;
-                    myArg->c = myCol;
-
-                    //printf("myArg->A[%d][0]: %f, myArg->B[0][%d]: %f\n", myRow, myArg->A[myRow][0], myCol, myArg->B[0][myCol]);
-                    //printf("rA[%d][0]: %f, rB[0][%d]: %f\n", myRow, rA[myRow][0],
-                    //    myCol, rB[0][myCol]);
-                    if(myRow < (numRowsA - 1)){
-                        if(myCol < (numColsB - 1)){
-                            myCol++;
-                        } else {
-                            myRow++;
-                            myCol = 0;
-                        }
+                //printf("myArg->A[%d][0]: %f, myArg->B[0][%d]: %f\n", myRow, myArg->A[myRow][0], myCol, myArg->B[0][myCol]);
+                //printf("rA[%d][0]: %f, rB[0][%d]: %f\n", myRow, rA[myRow][0],
+                //    myCol, rB[0][myCol]);
+                if(myRow < (numRowsA - 1)){
+                    if(myCol < (numColsB - 1)){
+                        myCol++;
                     } else {
-                        if(myCol < (numColsB - 1)){
-                            myCol++;
-                        } else {
-                            printf("finished with the multiplication\n");
-                        }
+                        myRow++;
+                        myCol = 0;
                     }
+                } else {
+                    if(myCol < (numColsB - 1)){
+                        myCol++;
+                    } else {
+                        printf("finished with the multiplication\n");
+                    }
+                }
 
-                    pthread_create(&threads[count], NULL, MultiCalculate, (void*)myArg);
+                pthread_create(&threads[count % numThreads], NULL, MultiCalculate, (void*)myArg);
 
-                    pthread_cond_wait(&writeCV, &mutexRC);
+                pthread_cond_wait(&writeCV, &mutexRC);
 
-                    double* outDouble;
-                    char* out;
-                    outDouble = malloc(sizeof(double));
-                    outDouble[0] = ijResult;
-                    out = (char*) outDouble;
-                    fwrite(out, 1, sizeof(double), fd3);
+                double* outDouble;
+                char* out;
+                outDouble = malloc(sizeof(double));
+                outDouble[0] = ijResult;
+                out = (char*) outDouble;
+                fwrite(out, 1, sizeof(double), fd3);
 
-                    printf("ij result: %f\n", ijResult);
-                pthread_mutex_unlock(&mutexRC);
+                printf("ij result: %f\n", ijResult);
+            pthread_mutex_unlock(&mutexRC);
 
-                count++;
+            count++;
             }
         }
-    //    sleep(2);
-    }
 
     endT = time(NULL);
     double totalTime;
     totalTime = (double)(endT - startT);
+
     printf("\nIt took %.1f seconds to multiply \n", totalTime);
     printf("matrix A: rows %d, cols %d\n", numRowsA, numColsA);
     printf("matrix B: rows %d, cols %d\n", numRowsB, numColsB);
     printf("Using %d worker threads.\n", numThreads);
 
-    /*
-    TODO: i need to get thread return values working. as well as thread
-    concurrency and locking
-    */
 
-/*
-    pthread_t t1;
-    struct RowCol* myArg = (struct RowCol*) calloc(1, sizeof(struct RowCol));
-    myArg->numRowsA = numRowsA;
-    myArg->numRowsB = numRowsB;
-    myArg->numColsB = numColsB;
 
-    //memcpy(myArg->A, rA, 2048);
-    //memcpy(myArg->col, colVals, 2048);
-    printf("create p thread\n");
-    int rtn1 = pthread_create(&t1, NULL, Calculate, &myArg);
-    printf("rtn1 = %d\n", rtn1);
-    printf("pthread done\n");
-*/
     return 0;
 }
