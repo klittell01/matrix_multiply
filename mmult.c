@@ -236,6 +236,8 @@ int main (int argc, char * argv[]){
     // begin by timing the process //
     int startT;
     int endT;
+    pthread_t threads[numThreads];
+
     startT = time(NULL);
 
     int* outSize;
@@ -251,7 +253,6 @@ int main (int argc, char * argv[]){
     } else {
         int total = numRowsA * numColsB;
         int count = 0;
-        pthread_t threads[numThreads];
         struct RowCol* myArg = (struct RowCol *) calloc(1, sizeof(struct RowCol));
         myArg->A = calloc(numRowsA * numColsB, sizeof(double));
         myArg->B = calloc(numRowsA * numColsB, sizeof(double));
@@ -303,9 +304,16 @@ int main (int argc, char * argv[]){
     printf("\nIt took %.1f seconds to multiply \n", totalTime);
     printf("matrix A: rows %d, cols %d\n", numRowsA, numColsA);
     printf("matrix B: rows %d, cols %d\n", numRowsB, numColsB);
-    printf("Using %d worker threads.\n", numThreads);
+    printf("Using %d worker threads.\n\n", numThreads);
 
-
+    fclose(fd1);
+    fclose(fd2);
+    fclose(fd3);
+    if(useThreads == true){
+        for(int i = 0; i < numThreads; i++){
+           pthread_join(threads[i], NULL);
+        }
+    }
 
     return 0;
 }
